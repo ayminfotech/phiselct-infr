@@ -92,3 +92,48 @@ resource "aws_instance" "nginx_server" {
     Name = "phi-select-${var.environment}-nginx-server"
   }
 }
+resource "aws_security_group" "app_server_sg" {
+  name        = "phi-select-${var.environment}-app-server-sg"
+  description = "Allow internal communication for the Application Server within the private network"
+  vpc_id      = aws_vpc.main.id
+
+  # Allow SSH (port 22) from anywhere within the VPC
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.main.cidr_block]
+    description = "Allow SSH access within VPC"
+  }
+
+  # Allow traffic on port 8080 from anywhere within the VPC
+  ingress {
+    from_port   = 8080
+    to_port     = 8080
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.main.cidr_block]
+    description = "Allow traffic on port 8080 within VPC"
+  }
+
+  # Allow traffic on port 8580 from anywhere within the VPC
+  ingress {
+    from_port   = 8580
+    to_port     = 8580
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.main.cidr_block]
+    description = "Allow traffic on port 8580 within VPC"
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow all outbound traffic"
+  }
+
+  tags = {
+    Name        = "phi-select-${var.environment}-app-server-sg"
+    Environment = var.environment
+  }
+}

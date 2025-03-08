@@ -142,3 +142,32 @@ resource "aws_security_group" "nginx_sg" {
     Environment = var.environment
   }
 }
+resource "aws_instance" "application_server" {
+  ami                    = data.aws_ami.ubuntu.id
+  instance_type          = "t3.micro"
+  subnet_id              = aws_subnet.private[0].id
+  vpc_security_group_ids = [aws_security_group.app_server_sg.id, aws_security_group.bastion_sg.id]
+  key_name               = var.key_name
+
+  user_data = <<-EOF
+    #!/bin/bash
+    apt-get update -y
+    apt-get upgrade -y
+    apt-get install -y docker.io
+    systemctl start docker
+    systemctl enable docker
+    usermod -aG docker ubuntu
+
+    # Optionally install docker-compose if required by your deployment scripts
+    curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+    chmod +x /usr/local/bin/docker-compose
+
+    # No container deployments here.
+    # Deployment scripts triggered by GitHub Runner will handle container orchestration.
+  EOF
+
+  tags = {
+    Name        = "phi-select-${var.environment}-application-server"
+    Environment = var.environment
+  }
+}

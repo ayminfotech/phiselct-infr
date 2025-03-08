@@ -122,6 +122,15 @@ resource "aws_security_group" "nginx_sg" {
     description = "Allow HTTP traffic from the public internet"
   }
 
+  # Allow SSH (port 22) from anywhere within the VPC
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.main.cidr_block]
+    description = "Allow SSH access within VPC"
+  }
+
   ingress {
     from_port   = 443
     to_port     = 443
@@ -142,32 +151,85 @@ resource "aws_security_group" "nginx_sg" {
     Environment = var.environment
   }
 }
-resource "aws_instance" "application_server" {
-  ami                    = data.aws_ami.ubuntu.id
-  instance_type          = "t3.micro"
-  subnet_id              = aws_subnet.private[0].id
-  vpc_security_group_ids = [aws_security_group.app_server_sg.id, aws_security_group.bastion_sg.id]
-  key_name               = var.key_name
 
-  user_data = <<-EOF
-    #!/bin/bash
-    apt-get update -y
-    apt-get upgrade -y
-    apt-get install -y docker.io
-    systemctl start docker
-    systemctl enable docker
-    usermod -aG docker ubuntu
 
-    # Optionally install docker-compose if required by your deployment scripts
-    curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-    chmod +x /usr/local/bin/docker-compose
+resource "aws_security_group" "app_server_sg" {
+  name        = "phi-select-${var.environment}-app-server-sg"
+  description = "Allow internal communication for the Application Server within the private network"
+  vpc_id      = aws_vpc.main.id
 
-    # No container deployments here.
-    # Deployment scripts triggered by GitHub Runner will handle container orchestration.
-  EOF
+  # Allow SSH (port 22) from anywhere within the VPC
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.main.cidr_block]
+    description = "Allow SSH access within VPC"
+  }
+
+  # Allow traffic on port 8080 from anywhere within the VPC
+  ingress {
+    from_port   = 8080
+    to_port     = 8080
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.main.cidr_block]
+    description = "Allow traffic on port 8080 within VPC"
+  }
+
+  # Allow traffic on port 8580 from anywhere within the VPC
+  ingress {
+    from_port   = 8580
+    to_port     = 8580
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.main.cidr_block]
+    description = "Allow traffic on port 8580 within VPC"
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow all outbound traffic"
+  }
 
   tags = {
-    Name        = "phi-select-${var.environment}-application-server"
+    Name        = "phi-select-${var.environment}-app-server-sg"
+    Environment = var.environment
+  }
+}
+
+resource "aws_security_group" "alb_sg" {
+  name        = "phi-select-${var.environment}-alb-sg"
+  vpc_id      = aws_vpc.main.id
+  description = "Security group for the ALB"
+
+  ingress {
+    description = "Allow HTTP"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "Allow HTTPS"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    description = "Allow all outbound traffic"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name        = "phi-select-${var.environment}-alb-sg"
     Environment = var.environment
   }
 }

@@ -74,7 +74,7 @@ resource "aws_instance" "microservices" {
 # This server installs and runs Nginx and will be accessible via Route53.
 resource "aws_instance" "nginx_server" {
   ami                    = data.aws_ami.amazon_linux.id
-  instance_type          = var.environment == "prod" ? "m5.large" : "t3.micro"
+  instance_type          = var.environment == "prod" ? "m5.large" : "t3.medium"
   subnet_id              = aws_subnet.public[1].id
   vpc_security_group_ids = [aws_security_group.nginx_sg.id]
   key_name               = var.key_name

@@ -10,8 +10,7 @@ resource "aws_security_group" "db_sg" {
     from_port       = 5432
     to_port         = 5432
     protocol        = "tcp"
-    # Allow traffic from the microservices security group only.
-    security_groups = [aws_security_group.micro_sg.id,aws_security_group.bastion_sg.id]
+    security_groups = [aws_security_group.micro_sg.id, aws_security_group.bastion_sg.id]
     description     = "Allow PostgreSQL access from microservices"
   }
 
@@ -40,7 +39,6 @@ resource "aws_security_group" "bastion_sg" {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    # Replace var.allowed_ssh_cidr with your public IP (or CIDR) allowed for SSH
     cidr_blocks = [var.allowed_ssh_cidr]
     description = "Allow SSH access from allowed IP"
   }
@@ -59,38 +57,67 @@ resource "aws_security_group" "bastion_sg" {
 }
 
 #############################################
-# Microservices Security Group
+# Microservices (Jenkins) Security Group
 #############################################
 resource "aws_security_group" "micro_sg" {
   name        = "phi-select-${var.environment}-micro-sg"
-  description = "Allow communication for Java microservices and GitHub Runner within the private network"
+  description = "Allow communication for microservices and Jenkins"
   vpc_id      = aws_vpc.main.id
 
-  # Allow SSH (port 22) from anywhere within the VPC
   ingress {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
     cidr_blocks = [aws_vpc.main.cidr_block]
-    description = "Allow SSH access from the private network"
+    description = "Allow SSH access within VPC"
   }
 
-  # Allow microservices traffic on port 8080 from within the VPC
   ingress {
     from_port   = 8080
     to_port     = 8080
     protocol    = "tcp"
     cidr_blocks = [aws_vpc.main.cidr_block]
-    description = "Allow microservices communication on port 8080 from the private network"
+    description = "Allow traffic on port 8080 within VPC"
   }
 
-  # Allow microservices traffic on port 8081 from within the VPC
   ingress {
     from_port   = 8580
     to_port     = 8580
     protocol    = "tcp"
     cidr_blocks = [aws_vpc.main.cidr_block]
-    description = "Allow microservices communication on port 8081 from the private network"
+    description = "Allow traffic on port 8580 within VPC"
+  }
+  
+   ingress {
+    from_port   = 8290
+    to_port     = 8290
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.main.cidr_block]
+    description = "Allow traffic on port 8580 within VPC"
+  }
+   ingress {
+    from_port   = 8380
+    to_port     = 8380
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.main.cidr_block]
+    description = "Allow traffic on port 8580 within VPC"
+  }
+  
+
+  ingress {
+    from_port   = 3000
+    to_port     = 3000
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.main.cidr_block]
+    description = "Allow traffic on port 3000 within VPC"
+  }
+
+  ingress {
+    from_port   = 9411
+    to_port     = 9411
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.main.cidr_block]
+    description = "Allow traffic on port 9411 within VPC"
   }
 
   egress {
@@ -107,7 +134,7 @@ resource "aws_security_group" "micro_sg" {
 }
 
 #############################################
-# Security Group for Nginx Public Server
+# Nginx Security Group
 #############################################
 resource "aws_security_group" "nginx_sg" {
   name        = "phi-select-${var.environment}-nginx-sg"
@@ -119,16 +146,7 @@ resource "aws_security_group" "nginx_sg" {
     to_port     = 80
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
-    description = "Allow HTTP traffic from the public internet"
-  }
-
-  # Allow SSH (port 22) from anywhere within the VPC
-  ingress {
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = [aws_vpc.main.cidr_block]
-    description = "Allow SSH access within VPC"
+    description = "Allow HTTP traffic"
   }
 
   ingress {
@@ -136,7 +154,15 @@ resource "aws_security_group" "nginx_sg" {
     to_port     = 443
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
-    description = "Allow HTTPS traffic from the public internet"
+    description = "Allow HTTPS traffic"
+  }
+
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.main.cidr_block]
+    description = "Allow SSH within VPC"
   }
 
   egress {
@@ -152,13 +178,14 @@ resource "aws_security_group" "nginx_sg" {
   }
 }
 
-
+#############################################
+# Application Server Security Group
+#############################################
 resource "aws_security_group" "app_server_sg" {
   name        = "phi-select-${var.environment}-app-server-sg"
-  description = "Allow internal communication for the Application Server within the private network"
+  description = "Allow internal communication for the Application Server"
   vpc_id      = aws_vpc.main.id
 
-  # Allow SSH (port 22) from anywhere within the VPC
   ingress {
     from_port   = 22
     to_port     = 22
@@ -167,22 +194,27 @@ resource "aws_security_group" "app_server_sg" {
     description = "Allow SSH access within VPC"
   }
 
-  # Allow traffic on port 8080 from anywhere within the VPC
   ingress {
     from_port   = 8080
     to_port     = 8080
     protocol    = "tcp"
     cidr_blocks = [aws_vpc.main.cidr_block]
-    description = "Allow traffic on port 8080 within VPC"
+    description = "Allow traffic on port 8080"
   }
 
-  # Allow traffic on port 8580 from anywhere within the VPC
   ingress {
     from_port   = 8580
     to_port     = 8580
     protocol    = "tcp"
     cidr_blocks = [aws_vpc.main.cidr_block]
-    description = "Allow traffic on port 8580 within VPC"
+    description = "Allow traffic on port 8580"
+  }
+  ingress {
+    from_port   = 8761
+    to_port     = 8761
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.main.cidr_block]
+    description = "Allow traffic on port 8580"
   }
 
   egress {
@@ -199,6 +231,66 @@ resource "aws_security_group" "app_server_sg" {
   }
 }
 
+#############################################
+# Observability Security Group
+#############################################
+resource "aws_security_group" "observability_sg" {
+  name        = "phi-select-${var.environment}-observability-sg"
+  description = "Allow internal communication for observability services (Loki, Grafana, etc.)"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    from_port   = 3000
+    to_port     = 3000
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.main.cidr_block]
+    description = "Allow observability service traffic within VPC"
+  }
+  ingress {
+    from_port   = 3100
+    to_port     = 3100
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.main.cidr_block]
+    description = "Allow observability service traffic within VPC"
+  }
+  ingress {
+    from_port   = 9411
+    to_port     = 9411
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.main.cidr_block]
+    description = "Allow observability service traffic within VPC"
+  }
+  ingress {
+    from_port   = 8761
+    to_port     = 8761
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.main.cidr_block]
+    description = "Allow observability service traffic within VPC"
+  }
+   ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.main.cidr_block]
+    description = "Allow SSH access within VPC"
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name        = "phi-select-${var.environment}-observability-sg"
+    Environment = var.environment
+  }
+}
+
+#############################################
+# ALB Security Group
+#############################################
 resource "aws_security_group" "alb_sg" {
   name        = "phi-select-${var.environment}-alb-sg"
   vpc_id      = aws_vpc.main.id

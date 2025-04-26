@@ -1,0 +1,41 @@
+#!/bin/bash
+set -e
+
+# Update and install prerequisites
+sudo apt-get update -y
+sudo apt-get install -y apt-transport-https ca-certificates curl software-properties-common
+
+# Add Docker’s official GPG key and repository
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+sudo apt-get update -y
+sudo apt-get install -y docker-ce
+
+# Start and enable Docker
+sudo systemctl start docker
+sudo systemctl enable docker
+
+# (Optional) Add a specific user to the docker group
+# Replace 'ubuntu' with your actual username if needed
+# sudo usermod -aG docker ubuntu
+
+# Pull and run Jenkins using Docker
+sudo docker pull jenkins/jenkins:lts
+
+# Create a Jenkins directory for persistent storage
+sudo mkdir -p /var/jenkins_home
+sudo chown -R 1000:1000 /var/jenkins_home
+
+# Run Jenkins in a Docker container
+sudo docker run -d \
+    --name jenkins \
+    -p 8080:8080 \
+    -p 50000:50000 \
+    -v /var/jenkins_home:/var/jenkins_home \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    jenkins/jenkins:lts
+
+# Wait for Jenkins to start and print the initial admin password
+echo "Waiting for Jenkins to start..."
+sleep 40
+sudo docker exec jenkins cat /var/jenkins_home/secrets/initialAdminPassword

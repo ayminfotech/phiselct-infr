@@ -25,7 +25,7 @@ variable "private_subnet_cidrs" {
 variable "allowed_ssh_cidr" {
   description = "CIDR block allowed for SSH access (bastion)"
   type        = string
-  default     = "106.51.165.20/32"
+  default     = "0.0.0.0/0"
 }
 
 variable "key_name" {

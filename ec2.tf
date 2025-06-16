@@ -37,6 +37,7 @@ resource "aws_instance" "bastion" {
   tags = {
     Name = "phi-select-${var.environment}-bastion"
   }
+  user_data = local.docker_install_script
 }
 
 ###############################
@@ -48,13 +49,10 @@ locals {
     set -eux
 
     curl -fsSL https://get.docker.com | sh
-
     apt-get update -y
     apt-get install -y git tree jq
-
     systemctl enable docker
     systemctl start docker
-
     usermod -aG docker ubuntu
   EOF
 }
@@ -70,19 +68,62 @@ resource "aws_instance" "jenkins_server" {
   key_name               = var.key_name
 
   user_data = <<-EOF
-    ${local.docker_install_script}
+#!/bin/bash
+exec > >(tee /var/log/user-data.log | logger -t user-data -s 2>/dev/console) 2>&1
+set -eux
 
-    mkdir -p /home/ubuntu/jenkins
-    chown -R ubuntu:ubuntu /home/ubuntu/jenkins
+echo "[INFO] Installing prerequisites"
+apt-get update -y
+apt-get install -y apt-transport-https ca-certificates curl software-properties-common gnupg lsb-release
 
-    docker run -d --restart unless-stopped \
-      --name jenkins \
-      -p 8080:8080 \
-      -p 50000:50000 \
-      -v /home/ubuntu/jenkins:/var/jenkins_home \
-      -v /var/run/docker.sock:/var/run/docker.sock \
-      jenkins/jenkins:lts-jdk17
-  EOF
+echo "[INFO] Installing Docker"
+mkdir -p /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+apt-get update -y
+apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+
+echo "[INFO] Starting Docker"
+systemctl enable docker
+systemctl start docker
+usermod -aG docker ubuntu
+
+echo "[INFO] Creating Jenkins volume"
+docker volume create jenkins_data
+
+echo "[INFO] Creating Groovy init script for admin user"
+mkdir -p /var/jenkins_home/init.groovy.d
+
+cat <<EOG > /var/jenkins_home/init.groovy.d/basic-security.groovy
+#!groovy
+import jenkins.model.*
+import hudson.security.*
+
+def instance = Jenkins.getInstance()
+
+def hudsonRealm = new HudsonPrivateSecurityRealm(false)
+hudsonRealm.createAccount("admin", "admin123")
+instance.setSecurityRealm(hudsonRealm)
+def strategy = new FullControlOnceLoggedInAuthorizationStrategy()
+strategy.setAllowAnonymousRead(false)
+instance.setAuthorizationStrategy(strategy)
+instance.save()
+EOG
+
+chown -R 1000:1000 /var/jenkins_home
+
+echo "[INFO] Running Jenkins container"
+docker run -d \
+  --name jenkins \
+  --restart=unless-stopped \
+  -p 8080:8080 \
+  -p 50000:50000 \
+  -v jenkins_data:/var/jenkins_home \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v /var/jenkins_home/init.groovy.d:/var/jenkins_home/init.groovy.d \
+  -u root \
+  jenkins/jenkins:lts
+EOF
 
   root_block_device {
     volume_size = 50
@@ -104,19 +145,7 @@ resource "aws_instance" "nginx_server" {
   vpc_security_group_ids = [aws_security_group.nginx_sg.id]
   key_name               = var.key_name
 
-  user_data = <<-EOF
-    #!/bin/bash
-    set -eux
-
-    yum update -y
-    amazon-linux-extras install docker -y
-    systemctl enable --now docker
-    usermod -aG docker ec2-user
-
-    curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" \
-      -o /usr/local/bin/docker-compose
-    chmod +x /usr/local/bin/docker-compose
-  EOF
+  user_data = local.docker_install_script
 
   root_block_device {
     volume_size = 30

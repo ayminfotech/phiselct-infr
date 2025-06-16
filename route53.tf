@@ -1,28 +1,49 @@
-data "aws_route53_zone" "existing_zone" {
+# Public DNS Zone
+data "aws_route53_zone" "public" {
   name         = "phiselect.com"
   private_zone = false
 }
 
-resource "aws_route53_record" "test_record" {
-  count   = local.is_test ? 1 : 0
-  zone_id = data.aws_route53_zone.existing_zone.zone_id
-  name    = local.server_domain  # e.g., "test" so it becomes test.phiselect.com
+# Jenkins (Private IP)
+resource "aws_route53_record" "jenkins" {
+  zone_id = data.aws_route53_zone.public.zone_id
+  name    = local.instance_domains["jenkins"]
   type    = "A"
-  alias {
-    name                   = aws_lb.app_alb.dns_name
-    zone_id                = aws_lb.app_alb.zone_id
-    evaluate_target_health = true
-  }
+  ttl     = 300
+  records = [aws_instance.jenkins_server.private_ip]
+
+  depends_on = [aws_instance.jenkins_server]
 }
 
-resource "aws_route53_record" "prod_record" {
-  count   = local.is_prod ? 1 : 0
-  zone_id = data.aws_route53_zone.existing_zone.zone_id
-  name    = local.server_domain  # e.g., "prod" so it becomes prod.phiselect.com
+# Observability (Private IP)
+resource "aws_route53_record" "observability" {
+  zone_id = data.aws_route53_zone.public.zone_id
+  name    = local.instance_domains["observability"]
   type    = "A"
-  alias {
-    name                   = aws_lb.app_alb.dns_name
-    zone_id                = aws_lb.app_alb.zone_id
-    evaluate_target_health = true
-  }
+  ttl     = 300
+  records = [aws_instance.observability_server.private_ip]
+
+  depends_on = [aws_instance.observability_server]
+}
+
+# Application (Private IP)
+resource "aws_route53_record" "app" {
+  zone_id = data.aws_route53_zone.public.zone_id
+  name    = local.instance_domains["app"]
+  type    = "A"
+  ttl     = 300
+  records = [aws_instance.application_server.private_ip]
+
+  depends_on = [aws_instance.application_server]
+}
+
+# NGINX (Public IP)
+resource "aws_route53_record" "nginx" {
+  zone_id = data.aws_route53_zone.public.zone_id
+  name    = local.instance_domains["nginx"]
+  type    = "A"
+  ttl     = 300
+  records = [aws_instance.nginx_server.public_ip]
+
+  depends_on = [aws_instance.nginx_server]
 }

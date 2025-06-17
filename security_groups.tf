@@ -216,6 +216,7 @@ resource "aws_security_group" "app_server_sg" {
     cidr_blocks = [aws_vpc.main.cidr_block]
     description = "Allow traffic on port 8580"
   }
+
   ingress {
     from_port   = 8290
     to_port     = 8290
@@ -223,7 +224,13 @@ resource "aws_security_group" "app_server_sg" {
     cidr_blocks = [aws_vpc.main.cidr_block]
     description = "Allow traffic on port 8580"
   }
-
+  ingress {
+    from_port   = 8380
+    to_port     = 8380
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.main.cidr_block]
+    description = "Allow traffic on port 8580"
+  }
 
   egress {
     from_port   = 0

@@ -43,7 +43,7 @@ resource "aws_route53_record" "nginx" {
   name    = local.instance_domains["nginx"]
   type    = "A"
   ttl     = 300
-  records = [aws_instance.nginx_server.public_ip]
+  records = [aws_instance.nginx_server.private_ip]
 
   depends_on = [aws_instance.nginx_server]
 }

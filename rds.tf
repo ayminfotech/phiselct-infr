@@ -13,7 +13,7 @@ resource "aws_db_subnet_group" "db_subnet_group" {
 resource "aws_db_instance" "rds_instance" {
   identifier              = "phi-select-${var.environment}-rds"
   engine                  = "postgres"
-  engine_version          = "13.15"
+  engine_version          = "13.20"
   instance_class          = local.db_instance_class
   allocated_storage       = local.db_allocated_storage
   db_name                 = local.master_db_name

@@ -49,7 +49,7 @@ resource "aws_route53_record" "nginx" {
 }
 resource "aws_route53_record" "ats_frontend" {
   zone_id = data.aws_route53_zone.public.zone_id
-  name    = "ats-frontend.phiselect.com"
+  name    = "test.phiselect.com"
   type    = "A"
   alias {
     name                   = aws_lb.app_alb.dns_name

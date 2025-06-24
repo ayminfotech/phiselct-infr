@@ -45,3 +45,26 @@ resource "aws_lb_target_group" "react_tg" {
     Project     = "phi-select"
   }
 }
+
+resource "aws_lb_target_group" "app_tg" {
+  name        = "phi-select-${var.environment}-app-tg"
+  port        = 8380
+  protocol    = "HTTP"
+  target_type = "instance"
+  vpc_id      = aws_vpc.main.id
+
+  health_check {
+    path                = "/actuator/health"
+    protocol            = "HTTP"
+    matcher             = "200"
+    interval            = 30
+    timeout             = 5
+    healthy_threshold   = 2
+    unhealthy_threshold = 2
+  }
+
+  tags = {
+    Environment = var.environment
+    Project     = "phi-select"
+  }
+}

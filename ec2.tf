@@ -1,23 +1,27 @@
+###############################
+# Data Sources for AMIs
+###############################
 data "aws_ami" "amazon_linux" {
   most_recent = true
   owners      = ["amazon"]
-
   filter {
     name   = "name"
     values = ["amzn2-ami-hvm-*-x86_64-ebs"]
   }
 }
-# Data source for Ubuntu 22.04 (for microservices)
+
 data "aws_ami" "ubuntu" {
   most_recent = true
-  owners      = ["099720109477"]  # Canonical's owner ID
-
+  owners      = ["099720109477"]
   filter {
     name   = "name"
     values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
   }
 }
+
+###############################
 # Bastion Host (Public Subnet)
+###############################
 resource "aws_instance" "bastion" {
   ami                    = data.aws_ami.amazon_linux.id
   instance_type          = "t3.micro"
@@ -25,115 +29,174 @@ resource "aws_instance" "bastion" {
   vpc_security_group_ids = [aws_security_group.bastion_sg.id]
   key_name               = var.key_name
 
+  root_block_device {
+    volume_size = 20
+    volume_type = "gp3"
+  }
+
   tags = {
     Name = "phi-select-${var.environment}-bastion"
   }
+  user_data = local.docker_install_script
 }
 
-# Microservices (Private Subnet) - Ubuntu 22.04
-resource "aws_instance" "microservices" {
+###############################
+# Common Docker Installation Script
+###############################
+locals {
+  docker_install_script = <<-EOF
+    #!/bin/bash
+    set -eux
+
+    curl -fsSL https://get.docker.com | sh
+    apt-get update -y
+    apt-get install -y git tree jq
+    systemctl enable docker
+    systemctl start docker
+    usermod -aG docker ubuntu
+  EOF
+}
+
+###############################
+# Jenkins Server (Private Subnet)
+###############################
+resource "aws_instance" "jenkins_server" {
   ami                    = data.aws_ami.ubuntu.id
-  instance_type          = "t3.micro"
+  instance_type          = "t3.large"
   subnet_id              = aws_subnet.private[0].id
-  vpc_security_group_ids = [aws_security_group.micro_sg.id,aws_security_group.bastion_sg.id]
+  vpc_security_group_ids = [aws_security_group.micro_sg.id, aws_security_group.bastion_sg.id]
   key_name               = var.key_name
 
   user_data = <<-EOF
-    #!/bin/bash
-    # Update system packages
-    apt-get update -y
-    apt-get upgrade -y
+#!/bin/bash
+exec > >(tee /var/log/user-data.log | logger -t user-data -s 2>/dev/console) 2>&1
+set -eux
 
-    # Install Docker
-    apt-get install -y docker.io
-    systemctl start docker
-    systemctl enable docker
-    usermod -aG docker ubuntu
+echo "[INFO] Installing prerequisites"
+apt-get update -y
+apt-get install -y apt-transport-https ca-certificates curl software-properties-common gnupg lsb-release
 
-    # Install docker-compose (optional)
-    curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-    chmod +x /usr/local/bin/docker-compose
+echo "[INFO] Installing Docker"
+mkdir -p /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+apt-get update -y
+apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 
-    # Create folder for GitHub Runner and configure it
-    cd /home/ubuntu
-    mkdir -p actions-runner && cd actions-runner
-    curl -o actions-runner-linux-x64-2.322.0.tar.gz -L https://github.com/actions/runner/releases/download/v2.322.0/actions-runner-linux-x64-2.322.0.tar.gz
-    # Optional: Validate the hash (if needed)
-    # echo "b13b784808359f31bc79b08a191f5f83757852957dd8fe3dbfcc38202ccf5768  actions-runner-linux-x64-2.322.0.tar.gz" | shasum -a 256 -c
-    tar xzf actions-runner-linux-x64-2.322.0.tar.gz
-    ./config.sh --url https://github.com/aymsudha/ats-registration-service --token BFAJCMY7MLUBGJLFSBJZT6THYWZTQ --unattended --replace
-    nohup ./run.sh > /home/ubuntu/runner.log 2>&1 &
-  EOF
+echo "[INFO] Starting Docker"
+systemctl enable docker
+systemctl start docker
+usermod -aG docker ubuntu
+
+echo "[INFO] Creating Jenkins volume"
+docker volume create jenkins_data
+
+echo "[INFO] Creating Groovy init script for admin user"
+mkdir -p /var/jenkins_home/init.groovy.d
+
+cat <<EOG > /var/jenkins_home/init.groovy.d/basic-security.groovy
+#!groovy
+import jenkins.model.*
+import hudson.security.*
+
+def instance = Jenkins.getInstance()
+
+def hudsonRealm = new HudsonPrivateSecurityRealm(false)
+hudsonRealm.createAccount("admin", "admin123")
+instance.setSecurityRealm(hudsonRealm)
+def strategy = new FullControlOnceLoggedInAuthorizationStrategy()
+strategy.setAllowAnonymousRead(false)
+instance.setAuthorizationStrategy(strategy)
+instance.save()
+EOG
+
+chown -R 1000:1000 /var/jenkins_home
+
+echo "[INFO] Running Jenkins container"
+docker run -d \
+  --name jenkins \
+  --restart=unless-stopped \
+  -p 8080:8080 \
+  -p 50000:50000 \
+  -v jenkins_data:/var/jenkins_home \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v /var/jenkins_home/init.groovy.d:/var/jenkins_home/init.groovy.d \
+  -u root \
+  jenkins/jenkins:lts
+EOF
+
+  root_block_device {
+    volume_size = 50
+    volume_type = "gp3"
+  }
 
   tags = {
-    Name = "phi-select-${var.environment}-microservices"
+    Name = "phi-select-${var.environment}-jenkins-server"
   }
 }
 
-# Nginx Server on Public Subnet (Target EC2)
-# This server installs and runs Nginx and will be accessible via Route53.
+###############################
+# Nginx Server (Public Subnet)
+###############################
 resource "aws_instance" "nginx_server" {
   ami                    = data.aws_ami.amazon_linux.id
-  instance_type          = var.environment == "prod" ? "m5.large" : "t3.micro"
+  instance_type          = "t3.medium"
   subnet_id              = aws_subnet.public[1].id
   vpc_security_group_ids = [aws_security_group.nginx_sg.id]
   key_name               = var.key_name
 
-  user_data = <<-EOF
-              #!/bin/bash
-              yum update -y
-              amazon-linux-extras install nginx1 -y
-              systemctl start nginx
-              systemctl enable nginx
-              echo "<h1>Welcome to ${local.server_domain}</h1>" > /usr/share/nginx/html/index.html
-              EOF
+  user_data = local.docker_install_script
+
+  root_block_device {
+    volume_size = 30
+    volume_type = "gp3"
+  }
 
   tags = {
     Name = "phi-select-${var.environment}-nginx-server"
   }
 }
-resource "aws_security_group" "app_server_sg" {
-  name        = "phi-select-${var.environment}-app-server-sg"
-  description = "Allow internal communication for the Application Server within the private network"
-  vpc_id      = aws_vpc.main.id
 
-  # Allow SSH (port 22) from anywhere within the VPC
-  ingress {
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = [aws_vpc.main.cidr_block]
-    description = "Allow SSH access within VPC"
-  }
+###############################
+# Application Server (Private Subnet)
+###############################
+resource "aws_instance" "application_server" {
+  ami                    = data.aws_ami.ubuntu.id
+  instance_type          = "t3.large"
+  subnet_id              = aws_subnet.private[0].id
+  vpc_security_group_ids = [aws_security_group.app_server_sg.id, aws_security_group.bastion_sg.id]
+  key_name               = var.key_name
 
-  # Allow traffic on port 8080 from anywhere within the VPC
-  ingress {
-    from_port   = 8080
-    to_port     = 8080
-    protocol    = "tcp"
-    cidr_blocks = [aws_vpc.main.cidr_block]
-    description = "Allow traffic on port 8080 within VPC"
-  }
+  user_data = local.docker_install_script
 
-  # Allow traffic on port 8580 from anywhere within the VPC
-  ingress {
-    from_port   = 8580
-    to_port     = 8580
-    protocol    = "tcp"
-    cidr_blocks = [aws_vpc.main.cidr_block]
-    description = "Allow traffic on port 8580 within VPC"
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-    description = "Allow all outbound traffic"
+  root_block_device {
+    volume_size = 30
+    volume_type = "gp3"
   }
 
   tags = {
-    Name        = "phi-select-${var.environment}-app-server-sg"
-    Environment = var.environment
+    Name = "phi-select-${var.environment}-application-server"
+  }
+}
+
+###############################
+# Observability Server (Private Subnet)
+###############################
+resource "aws_instance" "observability_server" {
+  ami                    = data.aws_ami.ubuntu.id
+  instance_type          = "t3.medium"
+  subnet_id              = aws_subnet.private[1].id
+  vpc_security_group_ids = [aws_security_group.observability_sg.id]
+  key_name               = var.key_name
+
+  user_data = local.docker_install_script
+
+  root_block_device {
+    volume_size = 30
+    volume_type = "gp3"
+  }
+
+  tags = {
+    Name = "phi-select-${var.environment}-observability-server"
   }
 }

@@ -1,0 +1,44 @@
+#!/bin/bash
+set -euo pipefail
+
+echo "[INFO] Updating packages and installing prerequisites..."
+sudo apt-get update -y
+sudo apt-get install -y apt-transport-https ca-certificates curl software-properties-common gnupg lsb-release
+
+if ! command -v docker &> /dev/null; then
+  echo "[INFO] Installing Docker..."
+  curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+  sudo add-apt-repository -y "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+  sudo apt-get update -y
+  sudo apt-get install -y docker-ce
+  sudo systemctl enable docker
+  sudo systemctl start docker
+else
+  echo "[INFO] Docker is already installed."
+fi
+
+echo "[INFO] Pulling Jenkins image..."
+sudo docker pull jenkins/jenkins:lts
+
+echo "[INFO] Setting up Jenkins data directory..."
+sudo mkdir -p /var/jenkins_home
+sudo chown -R 1000:1000 /var/jenkins_home
+
+if sudo docker ps -a --format '{{.Names}}' | grep -Eq "^jenkins$"; then
+  echo "[INFO] Jenkins container already exists. Restarting..."
+  sudo docker rm -f jenkins
+fi
+
+echo "[INFO] Starting Jenkins container with default credentials..."
+sudo docker run -d \
+    --name jenkins \
+    -p 8080:8080 \
+    -p 50000:50000 \
+    -v /var/jenkins_home:/var/jenkins_home \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    -e JENKINS_OPTS="--argumentsRealm.passwd.admin=admin --argumentsRealm.roles.admin=admin" \
+    jenkins/jenkins:lts
+
+echo "[INFO] Jenkins initialized. Access it at http://localhost:8080"
+echo "[INFO] Username: admin"
+echo "[INFO] Password: admin"

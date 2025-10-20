@@ -362,3 +362,52 @@ resource "aws_security_group" "alb_sg" {
     Environment = var.environment
   }
 }
+
+#############################################
+# AI Server Security Group
+#############################################
+resource "aws_security_group" "ai_server_sg" {
+  name        = "phi-select-${var.environment}-ai-server-sg"
+  vpc_id      = aws_vpc.main.id
+  description = "Allow internal communication for AI microservices"
+
+  # SSH from inside VPC (optional: tighten to bastion_sg only)
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.main.cidr_block]
+    description = "Allow SSH within VPC"
+  }
+
+  # App/Gateway -> AI (main app port, e.g., 8080)
+  ingress {
+    description     = "App server to AI"
+    from_port       = 8080
+    to_port         = 8080
+    protocol        = "tcp"
+    security_groups = [aws_security_group.app_server_sg.id]
+  }
+
+  # (Optional) Temporary: Bastion -> AI for testing
+  # ingress {
+  #   description     = "Bastion test to AI"
+  #   from_port       = 8080
+  #   to_port         = 8080
+  #   protocol        = "tcp"
+  #   security_groups = [aws_security_group.bastion_sg.id]
+  # }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow all outbound traffic"
+  }
+
+  tags = {
+    Name        = "phi-select-${var.environment}-ai-server-sg"
+    Environment = var.environment
+  }
+}

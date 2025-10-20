@@ -3,6 +3,7 @@ resource "aws_lb" "app_alb" {
   load_balancer_type = "application"
   subnets            = aws_subnet.public[*].id
   security_groups    = [aws_security_group.alb_sg.id]
+  idle_timeout       = 240
   tags = {
     Name        = "phi-select-${var.environment}-alb"
     Environment = var.environment

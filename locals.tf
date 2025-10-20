@@ -12,6 +12,7 @@ locals {
     observability = "${var.environment}-observability.${local.base_domain}"
     app           = "${var.environment}-app.${local.base_domain}"
     nginx         = "web-${var.environment}.${local.base_domain}"
+    ai           = "ai-${var.environment}.${local.base_domain}"
   }
 
   # Subdomain shortcut for generic records like ALB
